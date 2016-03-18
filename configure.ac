@@ -9,6 +9,8 @@ AC_CONFIG_HEADER([config.h])
 
 AC_PROG_LIBTOOL
 AC_PROG_CC
+AC_PROG_CXX
+AC_PROG_RANLIB
 AC_PROG_GCC_TRADITIONAL
 AC_PROG_INSTALL
 AC_PROG_MKDIR_P
@@ -157,6 +159,7 @@ AC_CHECK_HEADERS([netinet/ip_fw.h netinet6/ip6_fw.h], [], [],
 # Checks for typedefs, structures, and compiler characteristics.
 AC_C_CONST
 AC_TYPE_UID_T
+AC_TYPE_INT8_T
 AC_TYPE_INT16_T
 AC_TYPE_INT32_T
 AC_TYPE_MODE_T
@@ -173,6 +176,7 @@ AC_TYPE_UINT8_T
 # Checks for library functions.
 AC_FUNC_CHOWN
 AC_FUNC_FORK
+AC_FUNC_REALLOC
 AC_CHECK_FUNCS(atexit)
 AC_CHECK_FUNCS(daemon)
 AC_CHECK_FUNCS(endpwent)

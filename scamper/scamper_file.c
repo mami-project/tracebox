@@ -66,6 +66,7 @@ static const char rcsid[] =
 #include "tracebox/scamper_tracebox.h"
 #include "tracebox/scamper_tracebox_text.h"
 #include "tracebox/scamper_tracebox_warts.h"
+#include "tracebox/scamper_tracebox_json.h"
 #include "sniff/scamper_sniff.h"
 #include "sniff/scamper_sniff_warts.h"
 
@@ -221,7 +222,7 @@ static struct handler handlers[] = {
    scamper_file_json_dealias_write,        /* write_dealias */
    NULL,                                   /* write_neighbourdisc */
    NULL,                                   /* write_tbit */
-   NULL,                                   /* write_tracebox */
+   scamper_file_json_tracebox_write,       /* write_tracebox */
    NULL,                                   /* write_sniff */
    NULL,                                   /* free_state */
   },

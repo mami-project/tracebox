@@ -46,6 +46,7 @@ libscamperfile_la_SOURCES = \
 	tracebox/scamper_tracebox.c \
 	tracebox/scamper_tracebox_warts.c \
 	tracebox/scamper_tracebox_text.c \
+	tracebox/scamper_tracebox_json.c \
 	sniff/scamper_sniff.c \
 	sniff/scamper_sniff_warts.c
 
@@ -130,6 +131,7 @@ scamper_SOURCES = \
 	tracebox/scamper_tracebox_warts.c \
 	tracebox/scamper_tracebox_text.c \
 	tracebox/scamper_tracebox_do.c \
+	tracebox/scamper_tracebox_json.c \
 	sniff/scamper_sniff.c \
 	sniff/scamper_sniff_warts.c \
 	sniff/scamper_sniff_do.c
@@ -218,6 +220,7 @@ include_HEADERS = \
 	tracebox/scamper_tracebox_warts.h \
 	tracebox/scamper_tracebox_text.h \
 	tracebox/scamper_tracebox_do.h \
+	tracebox/scamper_tracebox_json.h \
 	sniff/scamper_sniff.h \
 	sniff/scamper_sniff_warts.h \
 	sniff/scamper_sniff_do.h

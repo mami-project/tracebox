@@ -45,16 +45,6 @@ static const char rcsid[] =
 #include "scamper_tracebox_do.h"
 #include "scamper_tracebox_text.h"
 
-/* Defaul parameters value */
-#define TRACEBOX_RETX_DEFAULT           3
-#define TRACEBOX_TIMEOUT_DEFAULT        3000
-#define TRACEBOX_TIMEOUT_LONG           70000
-#define TRACEBOX_SINGLE_HOP_MAX_REPLAYS 3
-#define TRACEBOX_TOTAL_MAX_REPLAYS   	5
-#define TRACEBOX_MAX_HOPS               64
-#define TRACEBOX_DEFAULT_MSS		    1460
-#define TRACEBOX_DEFAULT_WSCALE		    14
-
 typedef struct tracebox_options
 {
   uint8_t   udp;
@@ -63,12 +53,12 @@ typedef struct tracebox_options
   uint8_t   icmp_quote_type;
   uint16_t  dport;
   uint16_t  secondary_dport;
-  char      *probe, *raw_packet;
-  int 	    printmode;
-  uint8_t print_values;
+  char      *probe;
+  char      *raw_packet;
+  int 	   printmode;
+  uint8_t   print_values;
 
-  uint8_t app;
-
+  uint8_t   app;
 } tracebox_options_t;
 
 #define tp_len   un.tcp.len
@@ -343,7 +333,7 @@ static void timeout_syn(scamper_task_t *task)
       state->loop          = 3;
     }
     state->replaying = 0;
-    state->attempt=0;
+    state->attempt   = 0;
     scamper_debug(__func__," max replay for single hops");
   }
 
@@ -367,7 +357,7 @@ static void timeout_proxy(scamper_task_t *task)
     state->replaying = 1;
   } else if (state->attempt == TRACEBOX_SINGLE_HOP_MAX_REPLAYS) {
     state->replaying = 0;
-    state->attempt=0;
+    state->attempt   = 0;
     scamper_debug(__func__,"max replay for single hops: skipping...");
   }
 
@@ -624,7 +614,9 @@ done:
 }
 
 static void do_tracebox_write(scamper_file_t *sf, scamper_task_t *task) {
-   scamper_file_write_tracebox(sf, tracebox_getdata(task));
+   scamper_tracebox_t *tracebox = tracebox_getdata(task);
+   scamper_tracebox_pkts2hops(tracebox);
+   scamper_file_write_tracebox(sf, tracebox);
    return;
 }
 
@@ -702,8 +694,14 @@ static int tracebox_state_alloc(scamper_task_t *task)
       goto err;
     }
 #endif
+
+   if(scamper_tracebox_hops_alloc(tracebox, TRACEBOX_MAX_HOPS) != 0) {
+     printerror(errno, strerror, __func__, "could not malloc hops");
+     goto err;
+   }
+
    state->mode = MODE_RTSOCK;
-   state->last_ttl=0;
+   state->last_ttl = 0;
    reset_timeout_counters(state);
    state->raw   = NULL;
    state->probe = NULL;
@@ -714,11 +712,9 @@ static int tracebox_state_alloc(scamper_task_t *task)
          state->raw = scamper_fd_ip4();
       } else {
          state->probe = scamper_fd_tcp6(NULL, tracebox->sport);
-         scamper_debug(__func__,"PROBE %d\n", tracebox->sport);
       }
 
    }
-   
 
   return 0;
  err:
@@ -773,14 +769,13 @@ static scamper_probe_t build_probe_from_raw(scamper_task_t *task, scamper_probe_
       probe.pr_ip_id = tracebox->ipid_value;
     }
 
-    //probe.pr_ip_off = IP_DF;//donot fragment flag
   } else if (tracebox->dst->type == SCAMPER_ADDR_TYPE_IPV6) {
     if (tracebox->ipid) 
       probe.pr_ip_flow = tracebox->ipid_value;
   }
 
   probe.pr_len=strlen(raw_packet)/2;
-  probe.pr_data=malloc(probe.pr_len);
+  probe.pr_data=malloc_zero(probe.pr_len);
 
   int i, value;
   char tmp[3] = { 0 };
@@ -847,7 +842,7 @@ static scamper_probe_t build_probe(scamper_task_t *task, scamper_probe_t probe, 
     probe.pr_tcp_dport  = tracebox->dport;
     probe.pr_tcp_flags |= tracebox->flags;
     probe.pr_tcp_seq    = tracebox->seq;
-    probe.pr_tcp_win    = 65535;	
+    probe.pr_tcp_win    = TRACEBOX_DEFAULT_TCPWIN;	
    
     if (tracebox->mss)
       probe.pr_tcp_mss   = tracebox->mss;
@@ -934,7 +929,7 @@ static void do_tracebox_probe(scamper_task_t *task)
 #endif
 
       if(scamper_task_queue_isdone(task))
-	return;
+	      return;
 
       scamper_task_queue_wait(task, 1000);
       return;
@@ -1087,13 +1082,14 @@ static int tracebox_app_default(scamper_tracebox_t *tracebox,
 
 static void parse_probe(scamper_tracebox_t *tracebox) {
 
-   char *token, *p;
+   char *token, *p, *probe;
    uint32_t subtoken;
    const char * delimiter = "/";
 
    for (p = tracebox->probe; *p; p++) 
       *p = tolower(*p);
-   token = strtok(tracebox->probe, delimiter); 
+   probe = strdup(tracebox->probe);
+   token = strtok(probe, delimiter); 
 
    while (token) {
       /* Protocols */
@@ -1162,6 +1158,7 @@ static void parse_probe(scamper_tracebox_t *tracebox) {
 
       token = strtok(NULL, delimiter); 
    }
+   free(probe);
 }
 
 /*
@@ -1262,13 +1259,14 @@ void *scamper_do_tracebox_alloc(char *str) {
    tracebox->dport           = o.dport;
    tracebox->udp             = o.udp;
    tracebox->ipv6            = o.ipv6;
-   tracebox->probe           = o.probe;
    tracebox->rtt             = o.rtt;
    tracebox->print_values    = o.print_values;
    tracebox->icmp_quote_type = o.icmp_quote_type;
    tracebox->printmode       = o.printmode;
    tracebox->secondary_dport = o.secondary_dport;
 
+   if (o.probe) 
+      tracebox->probe = strdup(o.probe); 
    if (o.raw_packet)
       tracebox->raw_packet = strdup(o.raw_packet);
    if(o.app == 0) 

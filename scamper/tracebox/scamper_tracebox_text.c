@@ -25,262 +25,134 @@ static const char rcsid[] =
 #include "scamper_tracebox_text.h"
 #include "utils.h"
 
+static char * scamper_tracebox_icmp2text(const scamper_tracebox_t *tracebox, const uint8_t code,char *buf, size_t bufsize, size_t *soff) {
+   char *c;
+   if (!tracebox->ipv6) {
+      string_concat(buf, bufsize, soff, " icmp ");
 
-static char * compute_differences(const scamper_tracebox_t *tracebox, 
-                                  const uint8_t *pkt1, const uint8_t *pkt2, 
-                                  const uint8_t type, const uint8_t network,
-                                  const uint8_t transport);
-
-static void compare_fields(const scamper_tracebox_t *tracebox,
-                           unsigned int start, unsigned int end, 
-                           uint8_t **ppkt1, uint8_t **ppkt2, size_t bufsize, 
-                           size_t *soff, char *buf);
-
-
-static int scamper_file_text_tracebox_write_standard(const scamper_tracebox_t *tracebox,char *buf, size_t bufsize, size_t *soff) {
-
-   scamper_tracebox_pkt_t *pkt, *prev_pkt = NULL; 
-
-   char addr[64], *cmp_result;
-   struct timeval diff;
-   uint32_t i, seq, ack, off;
-   uint16_t len;
-   uint8_t proto, flags, type, iphlen, tcphlen, *ptr, ttl, v, prev_query = 0, synacked = 0;
-   int frag, ip_start, trans_start, dlen, counter = 1;
-  
-   for(i=0; i<tracebox->pktc; i++) {
-      pkt = tracebox->pkts[i];
-      off = 0; v = 0;
-
-      /* IPv4 */
-      if(((pkt->data[0] & 0xf0) >> 4) == 4) {
-         v = 4;
-         iphlen = (pkt->data[0] & 0xf) * 4;
-	      len    = bytes_ntohs(pkt->data+2);
-         ttl    = pkt->data[8];
-	      proto  = pkt->data[9];
-	      off     = (bytes_ntohs(pkt->data+6) & 0x1fff) * 8;
-
-	     scamper_addr_t *tmp_addr = scamper_addr_alloc(SCAMPER_ADDR_TYPE_IPV4, pkt->data+12);
-	     scamper_addr_tostr(tmp_addr, addr, sizeof(addr));
-	     scamper_addr_free(tmp_addr);
-
-      /* IPv6 */
-      } else if(((pkt->data[0] & 0xf0) >> 4) == 6) {
-         v = 6;
-	      iphlen = 40;
-	      len    = bytes_ntohs(pkt->data+4) + iphlen;
-	      proto  = pkt->data[6];
-         ttl    = pkt->data[7];   
-
-	      scamper_addr_t *tmp_addr = scamper_addr_alloc(SCAMPER_ADDR_TYPE_IPV6, pkt->data+8);
-         scamper_addr_tostr(tmp_addr, addr, sizeof(addr));
-	      scamper_addr_free(tmp_addr);
-
-      } else {
-	      string_concat(buf, bufsize, soff, " erroneous packet\n");
-	      return;
+      switch (code) {
+         case ICMP_UNREACH_NET:           c = "net";           break;
+         case ICMP_UNREACH_HOST:          c = "host";          break;
+         case ICMP_UNREACH_PROTOCOL:      c = "protocol";      break;
+         case ICMP_UNREACH_PORT:          c = "port";          break;
+         case ICMP_UNREACH_SRCFAIL:       c = "src-rt failed"; break;
+         case ICMP_UNREACH_NET_UNKNOWN:   c = "net unknown";   break;
+         case ICMP_UNREACH_HOST_UNKNOWN:  c = "host unknown";  break;
+         case ICMP_UNREACH_ISOLATED:      c = "isolated";      break;
+         case ICMP_UNREACH_NET_PROHIB:    c = "net prohib";    break;
+         case ICMP_UNREACH_HOST_PROHIB:   c = "host prohib";   break;
+         case ICMP_UNREACH_TOSNET:        c = "tos net";       break;
+         case ICMP_UNREACH_TOSHOST:       c = "tos host";      break;
+         case ICMP_UNREACH_FILTER_PROHIB: c = "admin prohib";  break;
+         default:                         c = "unknown";       break;
       }
-
-      if (synacked) {
-	      string_concat(buf, bufsize, soff, " capture error\n");
-	      return;
+   } else {
+      string_concat(buf, bufsize, soff, " icmp6 ");
+      switch (code) {
+         case ICMP6_DST_UNREACH_NOROUTE:     c = "no route";     break;
+         case ICMP6_DST_UNREACH_ADMIN:       c = "admin prohib"; break;
+         case ICMP6_DST_UNREACH_BEYONDSCOPE: c = "beyond scope"; break;
+         case ICMP6_DST_UNREACH_ADDR:        c = "addr";         break;
+         case ICMP6_DST_UNREACH_NOPORT:      c = "port";         break;
+         default:                            c = "unknown";      break;
       }
-
-      if(proto == IPPROTO_TCP) {
-	      flags   = pkt->data[iphlen+13];
-	      tcphlen = ((pkt->data[iphlen+12] & 0xf0) >> 4) * 4;
-
-         /* SYN flag on */
-	      if(flags & 0x02) {
-            /* ACK flag on */
-	         if((flags & 0x10) && pkt->dir == SCAMPER_TRACEBOX_PKT_DIR_RX) {
-	            if (!prev_query) {
-		            string_concat(buf, bufsize, soff, " bad server behavior\n");
-		            continue;
-	            }
-                      
-	            cmp_result = compute_differences(tracebox, prev_pkt->data, pkt->data,
-					             SCAMPER_TRACEBOX_ANSWER_SYNACK, v, proto);
-	            string_concat(buf, bufsize, soff, " %-15s", addr);
-	            if (tracebox->rtt) 
-		            string_concat(buf, bufsize, soff, " RTT:%.4f",
-			            (((pkt->tv.tv_sec - prev_pkt->tv.tv_sec)*1000000L+pkt->tv.tv_usec) - prev_pkt->tv.tv_usec)/1000.0);
-	            if (cmp_result) {
-		            string_concat(buf, bufsize, soff, cmp_result);
-		            free(cmp_result);
-	            }
-	            synacked=1;
-            } else if (pkt->dir == SCAMPER_TRACEBOX_PKT_DIR_TX) {//SYN
-
-               if (prev_query) {
-		            string_concat(buf, bufsize, soff, " *\n");
-		            counter++;
-	            }
-	            string_concat(buf, bufsize, soff, " %2d:", counter);
-	            prev_pkt = pkt;
-
-	            prev_query=1;
-	            continue;
-            }  else {
-	            string_concat(buf, bufsize, soff, " erroneous packet\n");
-	            return;
-	         }
-         } else if(flags & 0x01) {
-            string_concat(buf, bufsize, soff, " %-15s TCP FIN", addr);
-         } else if(flags & 0x04) {
-            string_concat(buf, bufsize, soff, " %-15s TCP RST", addr);
-         } else {
-            string_concat(buf, bufsize, soff, " %-15s erroneous packet\n", addr);
-            return;
-         }
-
-      } else if(proto == IPPROTO_ICMP) {
-	      if (!prev_query) continue;
-	      prev_query=0;
-
-	      uint8_t icmp_type = pkt->data[iphlen];
-	      uint8_t icmp_code = pkt->data[iphlen+1];
-	      ip_start    = iphlen+8;
-	      trans_start = ip_start+20;
-	      dlen        = len-ip_start;
-
-         if (icmp_type == 11 && icmp_code == 0) {
-	         string_concat(buf, bufsize, soff, " %-15s ", addr);
-
-            /* get size of quoted packet */
-            char *quote_size;
-            if (len-ip_start <= 0) {
-               type = SCAMPER_TRACEBOX_ANSWER_EMPTY;
-               quote_size = "(0/40)";
-	         } else if (len-trans_start <= 0) {
-	            type = SCAMPER_TRACEBOX_ANSWER_ONLY_L3;
-               quote_size = "(20/40)";
-	         } else if (len-trans_start == 8) {
-	            type = SCAMPER_TRACEBOX_ANSWER_8B;
-               quote_size = "(28/40)";
-	         } else {
-	            type = SCAMPER_TRACEBOX_ANSWER_FULL;
-               quote_size = "(40/40)";
-	         }
-
-            if (tracebox->icmp_quote_type)
-               string_concat(buf, bufsize, soff, "%-6s", quote_size);
-            if (tracebox->rtt) 
-	            string_concat(buf, bufsize, soff, " RTT:%.4f",
-			     (((pkt->tv.tv_sec - prev_pkt->tv.tv_sec)*1000000L+pkt->tv.tv_usec) - prev_pkt->tv.tv_usec)/1000.0);
-
-	         cmp_result = compute_differences(tracebox, prev_pkt->data, 
-                                             &(pkt->data[ip_start]),
-					                              type, v, tracebox->udp ? 
-                                             IPPROTO_UDP : IPPROTO_TCP);
-            if (cmp_result) {
-               string_concat(buf, bufsize, soff, cmp_result);
-               free(cmp_result);
-            }
-         } else if (icmp_type == 3) { // dest unreachable
-            string_concat(buf, bufsize, soff, "Destination unreachable\n");
-         } else {
-	         string_concat(buf, bufsize, soff, " erroneous packet\n");
-	         return;
-         }
-
-      } else if (proto == IPPROTO_UDP) {
-                      
-	      if (prev_query) {
-	         string_concat(buf, bufsize, soff, " *\n");
-	         counter++;
-	      }
-	      string_concat(buf, bufsize, soff, " %2d:", counter);
-
-	      prev_pkt = pkt;
-	      prev_query=(pkt->dir == SCAMPER_TRACEBOX_PKT_DIR_TX);
-
-	      continue;
-      } else if(proto == IPPROTO_ICMPV6) {
-
-	      if (!prev_query) continue;
-	      prev_query=0;
-
-	      uint8_t type = pkt->data[iphlen];
-	      uint8_t code = pkt->data[iphlen+1];
-	      ip_start    = iphlen+8;
-	      trans_start = ip_start+40;
-	      dlen        = len-ip_start;
-
-	      if (type == 3 && code == 0) { //hop limit exceeded in transit
-	         string_concat(buf, bufsize, soff, " %s ", addr);
-
-	         /* get size of quoted packet */
-            char *quote_size;
-            if (len-ip_start <= 0) {
-               type = SCAMPER_TRACEBOX_ANSWER_EMPTY;
-               quote_size = "(0/60)";
-	         } else if (len-trans_start <= 0) {
-	            type = SCAMPER_TRACEBOX_ANSWER_ONLY_L3;
-               quote_size = "(40/60)";
-	         } else if (len-trans_start == 8) {
-	            type = SCAMPER_TRACEBOX_ANSWER_8B;
-               quote_size = "(48/60)";
-	         } else {
-	            type = SCAMPER_TRACEBOX_ANSWER_FULL;
-               quote_size = "(60/60)";
-	         }
-
-            if (tracebox->icmp_quote_type)
-               string_concat(buf, bufsize, soff, "%-6s", quote_size);
-	         if (tracebox->rtt) 
-	            string_concat(buf, bufsize, soff, " RTT:%.4f",
-			        (((pkt->tv.tv_sec - prev_pkt->tv.tv_sec)*
-                    1000000L+pkt->tv.tv_usec) - prev_pkt->tv.tv_usec)/1000.0);
-
-	         cmp_result = compute_differences(tracebox, prev_pkt->data, 
-                                            &(pkt->data[ip_start]),
-					                             type, v, tracebox->udp ? 
-                                            IPPROTO_UDP : IPPROTO_TCP);
-	         if (cmp_result) {
-	            string_concat(buf, bufsize, soff, cmp_result);
-	            free(cmp_result);
-	         }
-
-	      } else if (type == 1) { // dest unreachable
-	         string_concat(buf, bufsize, soff, " dest-unreachable\n");
-         } else {
-            string_concat(buf, bufsize, soff, " erroneous packet\n");
-	         return;
-         }
-
-      }  else {
-         string_concat(buf, bufsize, soff, " erroneous packet\n");
-	      return;
-      }
-
-      string_concat(buf, bufsize, soff, "\n");
-      counter++;
-      prev_pkt = pkt;
    }
+   string_concat(buf, bufsize, soff, " %s", c);
+}
 
-  /* if no answer for last query */
-   if (tracebox->result == SCAMPER_TRACEBOX_RESULT_TIMEOUT)
-      string_concat(buf, bufsize, soff, " *\n");
+static void scamper_file_text_tracebox_write_fields(const scamper_tracebox_t *tracebox, 
+                                                   scamper_tracebox_hop_field_t **fields, 
+                                                   uint8_t field_count, char* prefix, 
+                                                   char *buf, size_t bufsize, size_t *soff) {
+   scamper_tracebox_hop_field_t *field;
+   int i, j;
+   uint8_t len;
+
+   for (i=0; i < field_count; i++) {
+      field = fields[i];
+      string_concat(buf, bufsize, soff, " %s", prefix);
+      if (field->is_opt) {
+         const char *name = scamper_tracebox_tcp_options[field->name]; 
+         len = field->value_len;
+         string_concat(buf, bufsize, soff, "TCP::Options::%s", name);
+      } else {
+         const char *name = scamper_tracebox_fields[field->name];
+         len  = scamper_tracebox_fields_size[field->name];
+         string_concat(buf, bufsize, soff, "%s", name);
+      }
+
+      /* write field value */
+      if (tracebox->print_values) {
+         string_concat(buf, bufsize, soff, "(");
+         for (j=0; j < len; j++)
+            string_concat(buf, bufsize, soff, "%.2x", field->value[j]);
+         string_concat(buf, bufsize, soff, ")");
+      }
+      
+   }
+   return;
+}
+
+static int scamper_file_text_tracebox_write_standard(const scamper_tracebox_t *tracebox, 
+      char *buf, size_t bufsize, size_t *soff) {
+
+   scamper_tracebox_hop_t *hop;
+   int i;
+   char tmp[128];
+
+   static char *q4[] = {
+    "( 0/40)",               
+    "(20/40)",
+    "(28/40)",
+    "(40/40)",
+    ""
+   };
+   static char *q6[] = {
+    "( 0/60)",               
+    "(40/60)",
+    "(48/60)",
+    "(60/60)",
+    ""
+   };
+
+   for (i=0; i<tracebox->hop_count; i++) {
+      hop = tracebox->hops[i];
+      
+      string_concat(buf, bufsize, soff, " %2d:", i+1);
+      if (hop->hop_addr == NULL) {
+         string_concat(buf, bufsize, soff, " *\n");
+         continue;
+      } 
+
+      if (tracebox->ipv6) {
+         string_concat(buf, bufsize, soff, " %s ", 
+               scamper_addr_tostr(hop->hop_addr, tmp, sizeof(tmp)));
+      } else {
+         string_concat(buf, bufsize, soff, " %-15s", 
+               scamper_addr_tostr(hop->hop_addr, tmp, sizeof(tmp)));
+      }
+
+      if (tracebox->icmp_quote_type)
+         string_concat(buf, bufsize, soff, " %s", 
+             tracebox->ipv6 ? q6[hop->hop_quoted_size] : q4[hop->hop_quoted_size]);
+      if (tracebox->rtt) 
+         string_concat(buf, bufsize, soff, " (%s ms)", timeval_tostr(&hop->hop_rtt, tmp, sizeof(tmp)));
+
+
+       scamper_file_text_tracebox_write_fields(tracebox,
+            hop->modifications, 
+           hop->modifications_count, "", buf, bufsize, soff);
+       scamper_file_text_tracebox_write_fields(tracebox, hop->deletions, 
+           hop->deletions_count, "-", buf, bufsize, soff);
+       scamper_file_text_tracebox_write_fields(tracebox, hop->additions, 
+           hop->additions_count, "+", buf, bufsize, soff);
+
+       string_concat(buf, bufsize, soff, "\n");
+   }
 
    return 0;
 }
 
-static void free_array(uint8_t **ppkt, int len) {
-   if (!ppkt) return;
-
-   int i;
-   for (i=0; i<len; i++) {
-      if (ppkt[i]) 
-         free(ppkt[i]);
-   }
-   free(ppkt);
-}
-
-/* return the address of the last router that did include the specified field in the icmp ttl expired
- *
- */
 static char *last_observed_value(uint8_t *dlens, char **addrs, 
                                  uint8_t index, uint8_t field) {
    int i;
@@ -435,99 +307,3 @@ int scamper_file_text_tracebox_write(const scamper_file_t *sf,
    return 0;
 }
 
-char *compute_differences(const scamper_tracebox_t *tracebox, 
-      const uint8_t *pkt1, const uint8_t *pkt2, const uint8_t type, 
-      const uint8_t network, const uint8_t transport) {
-
-   size_t bufsize = 20480, soff = 0;
-   char *buf = malloc(bufsize*sizeof(char));
-   unsigned int transoff;// + ip_opt*4;
-   uint8_t **ppkt1 = parse_packet(network, transport, type, pkt1);
-   uint8_t **ppkt2 = parse_packet(network, transport, type, pkt2);
-
-   /* Look for new IP opt */
-   if (network == 4) {
-      transoff = 20;
-      if (ppkt1[24][0] != ppkt2[24][0]) 
-         string_concat(buf, bufsize, &soff, " warning: IPHeaderLength changed\n");
-   } else if (network == 6) {
-      transoff = 40;
-      if ((ppkt1[27][0] != ppkt2[27][0]) || (ppkt1[27][1] != ppkt2[27][1])) 
-         string_concat(buf, bufsize, &soff, " warning: IPv6Length changed\n");
-   } 
-
-   /* Compare each fields */
-   switch (type) {
-
-      /* 7 Bottom Non-optional TCP fields */
-      case SCAMPER_TRACEBOX_ANSWER_FULL:
-         compare_fields(tracebox, 0, 7, ppkt1, ppkt2, bufsize, &soff, buf);
-
-      /* Parse TCP options for full quote and SYN/ACKs */
-      case SCAMPER_TRACEBOX_ANSWER_SYNACK:
-         if (!tracebox->udp) {
-            int optoff = transoff+20;
-            uint8_t tcp_opt = ((pkt1[transoff+12]& 0xf0) >> 4)-5 ;
-            uint8_t tcp_opt2 = ((pkt2[transoff+12]& 0xf0) >> 4)-5 ;
-            int nb_bytes = tcp_opt * 4, nb_bytes2 = tcp_opt2 * 4;
-
-            uint8_t **diff = compare_tcp_opt(pkt1+optoff, pkt2+optoff, nb_bytes, nb_bytes2);
-            if ((diff[0][0] || diff[0][1]) || diff[0][2]) {
-	            uint8_t index;
-	            for (index=0;index<diff[0][0];index++) 
-	               string_concat(buf, bufsize, &soff, "  TCP::Options::%s",
-                                scamper_tracebox_tcp_options[diff[1][index]]);
-	            for (index=0;index<diff[0][1];index++) 
-	               string_concat(buf, bufsize, &soff, "  -TCP::Options::%s",
-                                scamper_tracebox_tcp_options[diff[2][index]]);
-	            for (index=0;index<diff[0][2];index++) 
-	               string_concat(buf, bufsize, &soff, "  +TCP::Options::%s",
-                                scamper_tracebox_tcp_options[diff[3][index]]);
-            }
-            free_array(diff, 4);
-         } // end not udp 
-         if (type == SCAMPER_TRACEBOX_ANSWER_SYNACK) 
-            break;
-
-      /* TCP Ports&Seqnum or UDP fields */
-      case SCAMPER_TRACEBOX_ANSWER_8B:
-         compare_fields(tracebox, 7, 14, ppkt1, ppkt2, bufsize, &soff, buf);
-
-      /* IP header */
-      case SCAMPER_TRACEBOX_ANSWER_ONLY_L3:
-         compare_fields(tracebox, 14, 36, ppkt1, ppkt2, bufsize, &soff, buf);
-  
-      case SCAMPER_TRACEBOX_ANSWER_EMPTY:
-         break;  
-   }
-
-   free_array(ppkt1, scamper_tracebox_fields_len);  
-   free_array(ppkt2, scamper_tracebox_fields_len);
-   if (!soff) free(buf);
-   return !soff ? NULL : buf;
-}
-
-static void compare_fields(const scamper_tracebox_t *tracebox,
-                    unsigned int start, unsigned int end, 
-                    uint8_t **ppkt1, uint8_t **ppkt2, size_t bufsize, 
-                    size_t *soff, char *buf) {
-   int i, j, k;
-   for (i=start; i<end; i++) {
-      for (j=0; j<scamper_tracebox_fields_size[i]; j++) {
-
-         if (ppkt1[i][j] != ppkt2[i][j]) {
-            if (tracebox->print_values) {
-               string_concat(buf, bufsize, soff, " %s(",
-                             scamper_tracebox_fields[i]);
-               for (k=0; k<scamper_tracebox_fields_size[i]; k++)
-                  string_concat(buf, bufsize, soff, "%x", ppkt2[i][k]);
-               string_concat(buf, bufsize, soff, ")");
-            } else {
-               string_concat(buf, bufsize, soff, " %s",
-                             scamper_tracebox_fields[i]);
-            }      
-            break;
-         }
-      }
-   }
-}

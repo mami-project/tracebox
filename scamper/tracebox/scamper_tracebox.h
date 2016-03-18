@@ -31,11 +31,22 @@
 #define SCAMPER_TRACEBOX_PKT_DIR_RX              2
 
 /* router answer */
-#define SCAMPER_TRACEBOX_ANSWER_EMPTY		  1
-#define SCAMPER_TRACEBOX_ANSWER_ONLY_L3	  2
-#define SCAMPER_TRACEBOX_ANSWER_8B		     3
-#define SCAMPER_TRACEBOX_ANSWER_FULL		  4
-#define SCAMPER_TRACEBOX_ANSWER_SYNACK      5 
+#define SCAMPER_TRACEBOX_ANSWER_EMPTY		  0
+#define SCAMPER_TRACEBOX_ANSWER_ONLY_L3	  1
+#define SCAMPER_TRACEBOX_ANSWER_8B		     2
+#define SCAMPER_TRACEBOX_ANSWER_FULL		  3
+#define SCAMPER_TRACEBOX_ANSWER_SYNACK      4 
+
+/* Default parameters value */
+#define TRACEBOX_RETX_DEFAULT           3
+#define TRACEBOX_TIMEOUT_DEFAULT        3000
+#define TRACEBOX_TIMEOUT_LONG           70000
+#define TRACEBOX_SINGLE_HOP_MAX_REPLAYS 3
+#define TRACEBOX_TOTAL_MAX_REPLAYS   	 5
+#define TRACEBOX_MAX_HOPS               128
+#define TRACEBOX_DEFAULT_MSS		       1460
+#define TRACEBOX_DEFAULT_WSCALE		    14
+#define TRACEBOX_DEFAULT_TCPWIN         65535
 
 #define TRACEBOX_PRINT_MODE_STANDARD           0x0
 #define TRACEBOX_PRINT_MODE_FRAGS              0x1                 
@@ -68,14 +79,40 @@ extern const char *scamper_tracebox_ipv6_fields[];
 extern const int scamper_tracebox_ipv4_fields_len;
 extern const char *scamper_tracebox_ipv4_fields[];
 
-typedef struct scamper_tracebox_pkt
-{
+typedef struct scamper_tracebox_pkt {
   struct timeval       tv;
   uint8_t              dir;
   uint16_t             len;
   uint8_t             *data;
 } scamper_tracebox_pkt_t;
 
+typedef struct scamper_tracebox_hop_field {
+   uint8_t name;
+   uint8_t *value;  
+   uint8_t value_len;
+   uint8_t is_opt;
+
+} scamper_tracebox_hop_field_t;
+
+typedef struct scamper_tracebox_hop
+{
+   /* the address of the hop that responded */
+   scamper_addr_t              *hop_addr;
+
+   /* time elapsed between sending the probe and receiving this resp */
+   struct timeval               hop_rtt;
+   uint16_t                     hop_quoted_size;
+   uint8_t                      hop_probe_ttl;
+
+   /* modifications */
+   scamper_tracebox_hop_field_t **modifications;
+   uint8_t modifications_count;
+   scamper_tracebox_hop_field_t **additions;
+   uint8_t additions_count;
+   scamper_tracebox_hop_field_t **deletions;
+   uint8_t deletions_count;
+
+} scamper_tracebox_hop_t;
 
 /*
  * scamper_tracebox
@@ -88,17 +125,21 @@ typedef struct scamper_tracebox
   scamper_cycle_t     *cycle;
   uint32_t             userid;
 
+  /* hops array, number of valid hops specified by hop_count */
+  scamper_tracebox_hop_t  **hops;
+  uint16_t               hop_count;
+
   scamper_addr_t      *src;
   scamper_addr_t      *dst;
   uint16_t             sport;
   uint16_t             dport;
-  uint16_t             secondary_dport; 
-  uint32_t		       seq;
+  uint32_t		        seq;
   
   uint8_t   udp;
   uint8_t   ipv6;
-  uint16_t  maxhops;
   char     *probe; 
+
+  /* Arguments */
   char     *raw_packet;
   uint8_t   printmode;
   uint8_t   rtt;
@@ -108,14 +149,18 @@ typedef struct scamper_tracebox
   /* options */
   uint8_t ect, ece, ce, dscp, mpcapable;
   uint8_t mpjoin, sackp, ts, ipid, sack;
-  uint8_t ao, md5,aokeyid,aornextkeyid;
-  uint8_t srv_ttl, flags;
-  uint32_t ipid_value, mss,wscale,sack_sle;
-  uint32_t sack_sre,tsval,tsecr, rec_token;
+  uint8_t ao, md5, aokeyid, aornextkeyid;
+  uint8_t flags;
+  uint32_t ipid_value, mss, wscale, sack_sle;
+  uint32_t sack_sre, tsval, tsecr, rec_token;
   uint32_t send_rnum, h_skey, l_skey;
   uint32_t md5digest[4], aomac[4];
 
   struct timeval       start;
+
+  /* proxy options */
+  uint16_t secondary_dport; 
+  uint8_t srv_ttl;
 
   /* outcome of test */
   uint16_t             result;
@@ -134,6 +179,7 @@ scamper_tracebox_t *scamper_tracebox_alloc(void);
 void scamper_tracebox_free(scamper_tracebox_t *tracebox);
 
 char *scamper_tracebox_res2str(const scamper_tracebox_t *tracebox, char *buf, size_t len);
+int scamper_tracebox_pkts2hops(scamper_tracebox_t *tracebox);
 
 scamper_tracebox_pkt_t *scamper_tracebox_pkt_alloc(uint8_t dir, uint8_t *data,
 					   uint16_t len, struct timeval *tv);
@@ -142,8 +188,13 @@ void scamper_tracebox_pkt_free(scamper_tracebox_pkt_t *pkt);
 int scamper_tracebox_pkts_alloc(scamper_tracebox_t *tracebox, uint32_t count);
 int scamper_tracebox_record_pkt(scamper_tracebox_t *tracebox, scamper_tracebox_pkt_t *pkt);
 
+int scamper_tracebox_hops_alloc(scamper_tracebox_t *tracebox, const int hops);
+void scamper_tracebox_hop_field_free(scamper_tracebox_hop_field_t *hop_field);
+scamper_tracebox_hop_t *scamper_tracebox_hop_alloc(void);
+void scamper_tracebox_hop_free(scamper_tracebox_hop_t *hop);
+int scamper_tracebox_hop_count(const scamper_tracebox_t *tracebox);
+
 uint8_t **parse_packet(const uint8_t network, const uint8_t transport, const uint8_t type, const uint8_t *pkt);
-uint8_t **compare_tcp_opt(const uint8_t *optlist1, const uint8_t *optlist2, uint8_t len1, uint8_t len2);
 
 void pprint_packet(const uint8_t network, const uint8_t transport, const uint8_t type, const uint8_t *pkt);
 

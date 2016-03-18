@@ -582,7 +582,7 @@ static int dlt_null_cb(scamper_dl_rec_t *dl, uint8_t *pkt, size_t len)
 /*
  * dlt_en10mb_cb
  *
- * handle ethernetça peut paraitre bizarre, mais je pense que l'auteur  frames.
+ * handle ethernet frames.
  *
  * an ethernet frame consists of
  *   - 6 bytes dst mac

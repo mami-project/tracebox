@@ -296,7 +296,7 @@ static int warts_tracebox_params_write(const scamper_tracebox_t *tracebox,
     {&tracebox->icmp_quote_type,    (wpw_t)insert_byte,    NULL},
     {&tracebox->udp,                (wpw_t)insert_byte,    NULL},
     {&tracebox->printmode,          (wpw_t)insert_byte,    NULL},
-    {&tracebox->print_values,       (wpr_t)insert_byte,    NULL},
+    {&tracebox->print_values,       (wpw_t)insert_byte,    NULL},
     {NULL,                NULL,                  NULL}, /* PKTC16 */
     {&tracebox->pktc,               (wpw_t)insert_uint32,  NULL},
   };
@@ -376,6 +376,12 @@ int scamper_file_warts_tracebox_read(scamper_file_t *sf, const warts_hdr_t *hdr,
       i = off;
       off += junk32;
     }
+
+  if(scamper_tracebox_hops_alloc(tracebox, TRACEBOX_MAX_HOPS) != 0) {
+     goto err;
+   }
+  if (scamper_tracebox_pkts2hops(tracebox) < 0)
+      goto err;
 
   assert(off == hdr->len);
   warts_addrtable_clean(&table);
