@@ -76,7 +76,7 @@ static size_t tcp_mpcapable(uint8_t *buf, const scamper_probe_t *probe)
   buf[0] = 30;
   buf[1] = 12;
   buf[2] = 0;
-  buf[3] = 129; // A | H
+  buf[3] = 129;
   bytes_htonl(buf+4, probe->pr_tcp_mpcapable);
   bytes_htonl(buf+8, probe->pr_tcp_mpcapable2);
   return 12;
@@ -98,7 +98,6 @@ static size_t tcp_wscale(uint8_t *buf, uint8_t wscale)
   buf[0] = 3;
   buf[1] = 3;
   buf[2] = wscale;
-  //buf[3] = 1;
   return 3;
 }
 

@@ -179,7 +179,7 @@ scamper_tracebox_t *scamper_tracebox_alloc(void);
 void scamper_tracebox_free(scamper_tracebox_t *tracebox);
 
 char *scamper_tracebox_res2str(const scamper_tracebox_t *tracebox, char *buf, size_t len);
-int scamper_tracebox_pkts2hops(scamper_tracebox_t *tracebox);
+int scamper_tracebox_pkts2hops(scamper_tracebox_t *tracebox, uint8_t parse_header);
 
 scamper_tracebox_pkt_t *scamper_tracebox_pkt_alloc(uint8_t dir, uint8_t *data,
 					   uint16_t len, struct timeval *tv);

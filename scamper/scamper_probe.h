@@ -163,12 +163,12 @@ typedef struct scamper_probe
   uint32_t               pr_tcp_sack[8];
   uint8_t                pr_tcp_sackb;
   uint8_t                pr_tcp_wscale;
-  uint32_t		 pr_tcp_mpcapable;
-  uint32_t		 pr_tcp_mpcapable2;
-  uint32_t		 pr_tcp_mpjoin;
-  uint32_t		 pr_tcp_mpjoin2;
+  uint32_t		          pr_tcp_mpcapable;
+  uint32_t		          pr_tcp_mpcapable2;
+  uint32_t		          pr_tcp_mpjoin;
+  uint32_t		          pr_tcp_mpjoin2;
   uint8_t                pr_tcp_md5;
-  uint32_t		 pr_tcp_md5digest[4];
+  uint32_t		          pr_tcp_md5digest[4];
   uint8_t                pr_tcp_auth;
   uint8_t                pr_tcp_authkeyid;
   uint8_t                pr_tcp_authrnextkeyid;

@@ -615,7 +615,7 @@ done:
 
 static void do_tracebox_write(scamper_file_t *sf, scamper_task_t *task) {
    scamper_tracebox_t *tracebox = tracebox_getdata(task);
-   scamper_tracebox_pkts2hops(tracebox);
+   scamper_tracebox_pkts2hops(tracebox, 0);
    scamper_file_write_tracebox(sf, tracebox);
    return;
 }
@@ -787,16 +787,17 @@ static scamper_probe_t build_probe_from_raw(scamper_task_t *task, scamper_probe_
   return probe;
 }
 
-static scamper_probe_t build_probe(scamper_task_t *task, scamper_probe_t probe, uint8_t update_ttl) {
+static scamper_probe_t build_probe(scamper_task_t *task, scamper_probe_t probe, 
+                                   uint8_t update_ttl) {
 
   scamper_tracebox_t *tracebox = tracebox_getdata(task);
   tracebox_state_t *state = tracebox_getstate(task);
 
   /* Common to all probes */
   if (state->raw != NULL) {
-     probe.pr_fd   = scamper_fd_fd_get(state->raw);
+     probe.pr_fd = scamper_fd_fd_get(state->raw);
   } else if (state->probe != NULL) {
-     probe.pr_fd   = scamper_fd_fd_get(state->probe);
+     probe.pr_fd = scamper_fd_fd_get(state->probe);
       
   } else {
      probe.pr_fd     = -1;

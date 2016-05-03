@@ -380,7 +380,7 @@ int scamper_file_warts_tracebox_read(scamper_file_t *sf, const warts_hdr_t *hdr,
   if(scamper_tracebox_hops_alloc(tracebox, TRACEBOX_MAX_HOPS) != 0) {
      goto err;
    }
-  if (scamper_tracebox_pkts2hops(tracebox) < 0)
+  if (scamper_tracebox_pkts2hops(tracebox, 1) < 0)
       goto err;
 
   assert(off == hdr->len);

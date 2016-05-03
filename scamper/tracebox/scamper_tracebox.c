@@ -698,13 +698,100 @@ static void compute_differences(const scamper_tracebox_t *tracebox,
    return;
 }
 
-int scamper_tracebox_pkts2hops(scamper_tracebox_t *tracebox) {
+static void parse_meta(scamper_tracebox_t *tracebox, scamper_tracebox_pkt_t *pkt, 
+                       uint8_t v, uint8_t proto, uint8_t iphlen) {
+   /* populate option fields */
+   if (v == 6) {
+      struct ip6_hdr ip_hdr = *(struct ip6_hdr*)pkt->data;
+
+      tracebox->ipid_value   = ntohl(ip_hdr.ip6_flow) & 0xfffff;
+      tracebox->ect          = ntohl(ip_hdr.ip6_flow) & 0x200000 >> 25;
+      tracebox->ce           = ntohl(ip_hdr.ip6_flow) & 0x100000 >> 24;
+      tracebox->dscp         = ntohl(ip_hdr.ip6_flow) & 0xfc00000 >> 20;
+   } else if (v == 4) {
+      struct ip ip_hdr = *(struct ip*)pkt->data;
+
+      tracebox->ipid_value   = ntohs(ip_hdr.ip_id);
+      tracebox->ect          = (ip_hdr.ip_tos & 0x02) >> 1;
+      tracebox->ce           =  ip_hdr.ip_tos & 0x01;
+      tracebox->dscp         = (ip_hdr.ip_tos & 0xfc) >> 2;
+      
+   }
+
+   if (proto == IPPROTO_TCP) {
+      
+      struct tcphdr tcp_hdr = *(struct tcphdr*)(pkt->data + iphlen);
+      tracebox->seq          = ntohl(tcp_hdr.seq);
+      tracebox->flags        = tcp_hdr.th_flags;
+      tracebox->ece          = (tcp_hdr.th_flags & 0x80) >> 7;  
+
+      typedef struct {
+        uint8_t kind;
+        uint8_t size;
+      } tcp_option_t;
+      uint8_t* opt = ( pkt->data + iphlen + sizeof(struct tcphdr));
+      uint8_t subtype;
+      while( *opt != 0 ) {
+         
+         tcp_option_t _opt = *(tcp_option_t*)opt;
+         switch (_opt.kind) {
+            case 1: // NOP 
+               ++opt;  // NOP is one byte;
+               break;
+            case 2: // MSS 2
+               tracebox->mss = ntohs(*(uint16_t*)(opt + 2));
+               opt += _opt.size;
+               break;
+            case 3: // wscale 1
+               tracebox->wscale = *(uint8_t*)(opt + 2);
+               opt += _opt.size;
+               break;
+            case 4: // sack permitted
+               tracebox->sackp = 1;
+               opt += _opt.size;
+               break;
+            case 5: // sack 8
+               tracebox->sack = 1;
+               tracebox->sack_sle     = ntohl(*(uint32_t*)(opt + 2));
+               tracebox->sack_sre     = ntohl(*(uint32_t*)(opt + 6));
+               opt += _opt.size;
+               break;
+            case 8: // timestamp 10
+               tracebox->ts           = 1;
+               tracebox->tsval        = ntohl(*(uint32_t*)(opt + 2));
+               tracebox->tsecr        = ntohl(*(uint32_t*)(opt + 6));
+               opt += _opt.size;
+               break;
+            case 30: // mptcp
+               subtype = (*(uint8_t*)(opt + 2) >> 4);
+               if (subtype == 0) {
+                  tracebox->mpcapable = 1;
+                  tracebox->h_skey    = ntohl(*(uint32_t*)(opt + 2));
+                  tracebox->l_skey    = ntohl(*(uint32_t*)(opt + 6));
+               } else if (subtype == 1) {
+                  tracebox->mpjoin    = 1;
+                  tracebox->rec_token = ntohl(*(uint32_t*)(opt + 2));
+                  tracebox->send_rnum = ntohl(*(uint32_t*)(opt + 6));
+               }
+               opt += _opt.size;
+               break;
+            default:
+               opt += (_opt.size <= 0) ? 1 :  _opt.size;
+               break;
+         }
+      }
+   }
+
+}
+
+int scamper_tracebox_pkts2hops(scamper_tracebox_t *tracebox, uint8_t parse_header) {
 
    scamper_tracebox_pkt_t *pkt, *prev_pkt = NULL; 
    scamper_addr_t *addr;
    uint32_t i, off;
    uint16_t len;
-   uint8_t proto, flags, type, iphlen, ttl, v, prev_query = 0, synacked = 0;
+   uint8_t proto, flags, type, iphlen, ttl, v;
+   uint8_t prev_query = 0, synacked = 0, header_parsed = 0;
    int frag, ip_start, trans_start, dlen, counter = 0;
 
    for(i=0; i<tracebox->pktc; i++) {
@@ -718,7 +805,7 @@ int scamper_tracebox_pkts2hops(scamper_tracebox_t *tracebox) {
 	      len    = bytes_ntohs(pkt->data+2);
          ttl    = pkt->data[8];
 	      proto  = pkt->data[9];
-	      off     = (bytes_ntohs(pkt->data+6) & 0x1fff) * 8;
+	      off    = (bytes_ntohs(pkt->data+6) & 0x1fff) * 8;
 
 	      addr = scamper_addr_alloc(SCAMPER_ADDR_TYPE_IPV4, pkt->data+12);
 
@@ -739,6 +826,11 @@ int scamper_tracebox_pkts2hops(scamper_tracebox_t *tracebox) {
       if (synacked) {
 	      tracebox->result = SCAMPER_TRACEBOX_RESULT_ERROR;
 	      goto err;
+      }
+
+      if (parse_header && !header_parsed && pkt->dir == SCAMPER_TRACEBOX_PKT_DIR_TX) {
+         parse_meta(tracebox, pkt, v, proto, iphlen);
+         header_parsed = 1; 
       }
 
       if(proto == IPPROTO_TCP) {
