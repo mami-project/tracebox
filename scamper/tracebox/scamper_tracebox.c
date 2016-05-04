@@ -721,7 +721,7 @@ static void parse_meta(scamper_tracebox_t *tracebox, scamper_tracebox_pkt_t *pkt
    if (proto == IPPROTO_TCP) {
       
       struct tcphdr tcp_hdr = *(struct tcphdr*)(pkt->data + iphlen);
-      tracebox->seq          = ntohl(tcp_hdr.seq);
+      tracebox->seq          = ntohl(tcp_hdr.th_seq);
       tracebox->flags        = tcp_hdr.th_flags;
       tracebox->ece          = (tcp_hdr.th_flags & 0x80) >> 7;  
 
@@ -740,27 +740,27 @@ static void parse_meta(scamper_tracebox_t *tracebox, scamper_tracebox_pkt_t *pkt
                break;
             case 2: // MSS 2
                tracebox->mss = ntohs(*(uint16_t*)(opt + 2));
-               opt += _opt.size;
+               opt += (_opt.size <= 0) ? 1 :  _opt.size;
                break;
             case 3: // wscale 1
                tracebox->wscale = *(uint8_t*)(opt + 2);
-               opt += _opt.size;
+               opt += (_opt.size <= 0) ? 1 :  _opt.size;
                break;
             case 4: // sack permitted
                tracebox->sackp = 1;
-               opt += _opt.size;
+               opt += (_opt.size <= 0) ? 1 :  _opt.size;
                break;
             case 5: // sack 8
                tracebox->sack = 1;
                tracebox->sack_sle     = ntohl(*(uint32_t*)(opt + 2));
                tracebox->sack_sre     = ntohl(*(uint32_t*)(opt + 6));
-               opt += _opt.size;
+               opt += (_opt.size <= 0) ? 1 :  _opt.size;
                break;
             case 8: // timestamp 10
                tracebox->ts           = 1;
                tracebox->tsval        = ntohl(*(uint32_t*)(opt + 2));
                tracebox->tsecr        = ntohl(*(uint32_t*)(opt + 6));
-               opt += _opt.size;
+               opt += (_opt.size <= 0) ? 1 :  _opt.size;
                break;
             case 30: // mptcp
                subtype = (*(uint8_t*)(opt + 2) >> 4);
@@ -773,7 +773,7 @@ static void parse_meta(scamper_tracebox_t *tracebox, scamper_tracebox_pkt_t *pkt
                   tracebox->rec_token = ntohl(*(uint32_t*)(opt + 2));
                   tracebox->send_rnum = ntohl(*(uint32_t*)(opt + 6));
                }
-               opt += _opt.size;
+               opt += (_opt.size <= 0) ? 1 :  _opt.size;
                break;
             default:
                opt += (_opt.size <= 0) ? 1 :  _opt.size;
