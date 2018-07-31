@@ -41,7 +41,8 @@ static const char rcsid[] =
 #include "scamper_tracebox_json.h"
 #include "utils.h"
 
-static char *fields_tostr(scamper_tracebox_hop_field_t **fields, uint8_t field_count) {
+static char *fields_tostr(scamper_tracebox_hop_field_t **fields, uint8_t field_count,
+ const int full) {
    char buf[1024];
    size_t off = 0;
    uint8_t i, j, len;
@@ -55,12 +56,20 @@ static char *fields_tostr(scamper_tracebox_hop_field_t **fields, uint8_t field_c
       if (field->is_opt) {
          const char *name = scamper_tracebox_tcp_options[field->name]; 
          len = field->value_len;
-         string_concat(buf, sizeof(buf), &off, 
+         if (full)
+           string_concat(buf, sizeof(buf), &off, 
             "{\"name\":\"TCP::Options::%s\", \"value\":\"", name);
+         else
+           string_concat(buf, sizeof(buf), &off, 
+            "{\"n\":\"TCP::O::%s\", \"v\":\"", name);
       } else {
          const char *name = scamper_tracebox_fields[field->name];
          len  = scamper_tracebox_fields_size[field->name];
-         string_concat(buf, sizeof(buf), &off, "{\"name\":\"%s\", \"value\":\"", 
+         if (full)
+           string_concat(buf, sizeof(buf), &off, "{\"name\":\"%s\", \"value\":\"", 
+              name);
+         else
+           string_concat(buf, sizeof(buf), &off, "{\"n\":\"%s\", \"v\":\"", 
               name);
       }
 
@@ -74,41 +83,70 @@ static char *fields_tostr(scamper_tracebox_hop_field_t **fields, uint8_t field_c
    return strdup(buf);
 }
 
-static char *hop_tostr(scamper_tracebox_hop_t *hop)
+static char *hop_tostr(scamper_tracebox_hop_t *hop, const int full)
 {
    char buf[4096], tmp[128];
    char *buf_modif, *buf_add, *buf_del;
    size_t off = 0;
 
    if (hop->hop_addr != NULL) {
-
-      string_concat(buf, sizeof(buf), &off,	"{\"addr\":\"%s\"",
-	      scamper_addr_tostr(hop->hop_addr, tmp, sizeof(tmp)));
-      string_concat(buf, sizeof(buf), &off,
-	      ", \"probe_ttl\":%u, \"icmp_size\":%u", 
-	      hop->hop_probe_ttl, hop->hop_quoted_size);
-      string_concat(buf, sizeof(buf), &off, ", \"rtt\":%s",
-	      timeval_tostr(&hop->hop_rtt, tmp, sizeof(tmp)));
+      if (full) {
+         string_concat(buf, sizeof(buf), &off,	"{\"addr\":\"%s\"",
+	         scamper_addr_tostr(hop->hop_addr, tmp, sizeof(tmp)));
+         string_concat(buf, sizeof(buf), &off,
+	         ", \"probe_ttl\":%u, \"icmp_size\":%u", 
+	         hop->hop_probe_ttl, hop->hop_quoted_size);
+         string_concat(buf, sizeof(buf), &off, ", \"rtt\":%s",
+	         timeval_tostr(&hop->hop_rtt, tmp, sizeof(tmp)));
+      } else {
+         string_concat(buf, sizeof(buf), &off,	"{\"ha\":\"%s\"",
+	         scamper_addr_tostr(hop->hop_addr, tmp, sizeof(tmp)));
+         string_concat(buf, sizeof(buf), &off,
+	         ", \"t\":%u, \"i\":%u", 
+	         hop->hop_probe_ttl, hop->hop_quoted_size);
+     }
    } else {
-
+     if (full) {
       string_concat(buf, sizeof(buf), &off,	"{\"addr\":\"*\"");
       string_concat(buf, sizeof(buf), &off,
 	      ", \"probe_ttl\":%u, \"icmp_size\":%u", 
 	      hop->hop_probe_ttl, 0);
       string_concat(buf, sizeof(buf), &off, ", \"rtt\":0");
+     } else {
+      string_concat(buf, sizeof(buf), &off,	"{\"ha\":\"*\"");
+      string_concat(buf, sizeof(buf), &off,
+	      ", \"t\":%u, \"i\":%u", 
+	      hop->hop_probe_ttl, 0);
+     }
    }
 
-   buf_modif = fields_tostr(hop->modifications, hop->modifications_count);
-   string_concat(buf, sizeof(buf), &off, ", \"modifications\":");
-   string_concat(buf, sizeof(buf), &off, buf_modif);
-   buf_add = fields_tostr(hop->additions, hop->additions_count);
-   string_concat(buf, sizeof(buf), &off, ", \"additions\":");
-   string_concat(buf, sizeof(buf), &off, buf_add);
-   buf_del = fields_tostr(hop->deletions, hop->deletions_count);
-   string_concat(buf, sizeof(buf), &off, ", \"deletions\":");
-   string_concat(buf, sizeof(buf), &off, buf_del);
+   if (full) {
+        
+     buf_modif = fields_tostr(hop->modifications, hop->modifications_count, full);
+     string_concat(buf, sizeof(buf), &off, ", \"modifications\":");
+     string_concat(buf, sizeof(buf), &off, buf_modif);
+     buf_add = fields_tostr(hop->additions, hop->additions_count, full);
+     string_concat(buf, sizeof(buf), &off, ", \"additions\":");
+     string_concat(buf, sizeof(buf), &off, buf_add);
+     buf_del = fields_tostr(hop->deletions, hop->deletions_count, full);
+     string_concat(buf, sizeof(buf), &off, ", \"deletions\":");
+     string_concat(buf, sizeof(buf), &off, buf_del);
 
-   string_concat(buf, sizeof(buf), &off, "}");
+     string_concat(buf, sizeof(buf), &off, "}");
+
+   } else {
+     buf_modif = fields_tostr(hop->modifications, hop->modifications_count, full);
+     string_concat(buf, sizeof(buf), &off, ", \"m\":");
+     string_concat(buf, sizeof(buf), &off, buf_modif);
+     buf_add = fields_tostr(hop->additions, hop->additions_count, full);
+     string_concat(buf, sizeof(buf), &off, ", \"a\":");
+     string_concat(buf, sizeof(buf), &off, buf_add);
+     buf_del = fields_tostr(hop->deletions, hop->deletions_count, full);
+     string_concat(buf, sizeof(buf), &off, ", \"d\":");
+     string_concat(buf, sizeof(buf), &off, buf_del);
+
+     string_concat(buf, sizeof(buf), &off, "}");
+   }
 
    free(buf_modif); 
    free(buf_add); 
@@ -117,82 +155,94 @@ static char *hop_tostr(scamper_tracebox_hop_t *hop)
    return strdup(buf);
 }
 
-static char *header_tostr(const scamper_tracebox_t *tracebox)
+static char *header_tostr(const scamper_tracebox_t *tracebox, const int full)
 {
   char buf[2048], tmp[64];
   const char *ptr;
   size_t off = 0;
   time_t tt = tracebox->start.tv_sec;
-
-  string_concat(buf, sizeof(buf), &off, 
-      "\"version\":\"0.1\",\"type\":\"tracebox\"");
-  string_concat(buf, sizeof(buf), &off, ", \"userid\":%u", tracebox->userid);
-  if (tracebox->raw_packet) {
-     string_concat(buf, sizeof(buf), &off, ", \"method\":\"raw\"");
-  } else {
-     string_concat(buf, sizeof(buf), &off, ", \"method\":\"%s-", 
+  if (full) {
+    
+    string_concat(buf, sizeof(buf), &off, 
+        "\"version\":\"0.1\",\"type\":\"tracebox\"");
+    string_concat(buf, sizeof(buf), &off, ", \"userid\":%u", tracebox->userid);
+    if (tracebox->raw_packet) {
+       string_concat(buf, sizeof(buf), &off, ", \"method\":\"raw\"");
+    } else {
+       string_concat(buf, sizeof(buf), &off, ", \"method\":\"%s-", 
                      tracebox->ipv6 ? "ip6" : "ip4");
-     string_concat(buf, sizeof(buf), &off, "%s\"", 
+       string_concat(buf, sizeof(buf), &off, "%s\"", 
                      tracebox->udp ? "udp" : "tcp");
-  }
+    }
 
-  string_concat(buf, sizeof(buf), &off, ", \"probe\":\"%s\"", 
+    string_concat(buf, sizeof(buf), &off, ", \"probe\":\"%s\"", 
                (tracebox->probe != NULL) ? tracebox->probe : "default");
-  string_concat(buf, sizeof(buf), &off, ", \"src\":\"%s\"",
+    string_concat(buf, sizeof(buf), &off, ", \"src\":\"%s\"",
 		scamper_addr_tostr(tracebox->src, tmp, sizeof(tmp)));
-  string_concat(buf, sizeof(buf), &off, ", \"dst\":\"%s\"",
+    string_concat(buf, sizeof(buf), &off, ", \"dst\":\"%s\"",
 		scamper_addr_tostr(tracebox->dst, tmp, sizeof(tmp)));
-  string_concat(buf, sizeof(buf), &off, ", \"sport\":%u, \"dport\":%u",
-	  tracebox->sport, tracebox->dport);
-  string_concat(buf, sizeof(buf), &off,
+    string_concat(buf, sizeof(buf), &off, ", \"sport\":%u, \"dport\":%u",
+	   tracebox->sport, tracebox->dport);
+    string_concat(buf, sizeof(buf), &off,
 		", \"result\":\"%s\"",
 		scamper_tracebox_res2str(tracebox, tmp, sizeof(tmp)));
-  strftime(tmp, sizeof(tmp), "%Y-%m-%d %H:%M:%S", localtime(&tt));
-  string_concat(buf, sizeof(buf), &off,
+    strftime(tmp, sizeof(tmp), "%Y-%m-%d %H:%M:%S", localtime(&tt));
+    string_concat(buf, sizeof(buf), &off,
 		", \"start\":{\"sec\":%u, \"usec\":%u, \"ftime\":\"%s\"}",
 		tracebox->start.tv_sec, tracebox->start.tv_usec, tmp);
-  string_concat(buf, sizeof(buf), &off,
+    string_concat(buf, sizeof(buf), &off,
 		", \"attempts\":%u, \"hoplimit\":%u, \"wait\":%u",
 		TRACEBOX_SINGLE_HOP_MAX_REPLAYS, TRACEBOX_MAX_HOPS, 
       TRACEBOX_TIMEOUT_DEFAULT);
 
-  string_concat(buf, sizeof(buf), &off,	
+    string_concat(buf, sizeof(buf), &off,	
       ", \"ip_ect\":%u, \"ip_ce\":%u",
 		tracebox->ect, tracebox->ce);
-  string_concat(buf, sizeof(buf), &off,	
+    string_concat(buf, sizeof(buf), &off,	
       ", \"ip_dscp\":%u, \"ip_id\":%u, \"ip_id_value\":%u",
 		tracebox->dscp, tracebox->ipid, tracebox->ipid_value);
-  string_concat(buf, sizeof(buf), &off,	
+    string_concat(buf, sizeof(buf), &off,	
       ", \"tcp_flags\":%u, \"tcp_ece\":%u",
 		tracebox->flags, tracebox->ece);
-  string_concat(buf, sizeof(buf), &off,	
+    string_concat(buf, sizeof(buf), &off,	
       ", \"tcp_seq\":%u, \"tcp_ack\":%u, \"tcp_win\":%u",
 		tracebox->seq, 0, TRACEBOX_DEFAULT_TCPWIN);
 
-  string_concat(buf, sizeof(buf), &off,	
+    string_concat(buf, sizeof(buf), &off,	
       ", \"tcp_opt_mss\":%u, \"tcp_opt_wscale\":%u",
 		tracebox->mss, tracebox->wscale);
 
-  string_concat(buf, sizeof(buf), &off,	
+    string_concat(buf, sizeof(buf), &off,	
       ", \"tcp_opt_sackp\":%u, \"tcp_opt_sack\":%u",
 		tracebox->sackp, tracebox->sack);
-  string_concat(buf, sizeof(buf), &off,	
+    string_concat(buf, sizeof(buf), &off,	
       ", \"tcp_opt_sack_sle\":%u, \"tcp_opt_sack_sre\":%u",
 		tracebox->sack_sle, tracebox->sack_sre);
 
-  string_concat(buf, sizeof(buf), &off,	
+    string_concat(buf, sizeof(buf), &off,	
       ", \"tcp_opt_mp_capable\":%u, \"tcp_opt_mp_join\":%u",
 		tracebox->mpcapable, tracebox->mpjoin);
-  string_concat(buf, sizeof(buf), &off,	
+    string_concat(buf, sizeof(buf), &off,	
         ", \"tcp_opt_mp_capable_h_skey\":%u, \"tcp_opt_mp_capable_l_skey;\":%u",
 		tracebox->h_skey, tracebox->l_skey);
-  string_concat(buf, sizeof(buf), &off,	
+    string_concat(buf, sizeof(buf), &off,	
       ", \"tcp_opt_mp_join_rec_token\":%u, \"tcp_opt_mp_join_send_rnum;\":%u",
 		tracebox->rec_token, tracebox->send_rnum);
 
-  string_concat(buf, sizeof(buf), &off,	
+    string_concat(buf, sizeof(buf), &off,	
       ", \"tcp_opt_ts\":%u, \"tcp_opt_tsval\":%u, \"tcp_opt_tsecr\":%u",
 		tracebox->ts, tracebox->tsval, tracebox->tsecr);
+
+  } else {
+    
+    string_concat(buf, sizeof(buf), &off, "\"dst\":\"%s\"",
+		scamper_addr_tostr(tracebox->dst, tmp, sizeof(tmp)));
+    string_concat(buf, sizeof(buf), &off,
+		", \"r\":\"%s\"",
+		scamper_tracebox_res2str(tracebox, tmp, sizeof(tmp)));
+    string_concat(buf, sizeof(buf), &off,
+		", \"s\":%u", tracebox->start.tv_sec);
+  }
 
   return strdup(buf);
 }
@@ -205,11 +255,12 @@ int scamper_file_json_tracebox_write(const scamper_file_t *sf,
    off_t foff = 0;
    char *str = NULL, *header = NULL, **hops = NULL;
    int hopc, i, j, rc = -1;
+   const int full = 0;
 
    if(fd != STDOUT_FILENO && (foff = lseek(fd, 0, SEEK_CUR)) == -1)
       return -1;
 
-   if((header = header_tostr(tracebox)) == NULL)
+   if((header = header_tostr(tracebox, full)) == NULL)
       goto cleanup;
    len = strlen(header);
    
@@ -221,7 +272,7 @@ int scamper_file_json_tracebox_write(const scamper_file_t *sf,
       for (i=0, j=0; i<tracebox->hop_count; i++) {
          hop = tracebox->hops[i];
          if (j > 0) len++; // , 
-         if ((hops[j] = hop_tostr(hop)) == NULL)
+         if ((hops[j] = hop_tostr(hop, full)) == NULL)
             goto cleanup;
          len += strlen(hops[j]);
          j++;
@@ -234,7 +285,10 @@ int scamper_file_json_tracebox_write(const scamper_file_t *sf,
 
    string_concat(str, len, &off, "{%s", header);
    if (hopc > 0) {
-      string_concat(str, len, &off, ", \"hops\":[");
+      if (full)
+         string_concat(str, len, &off, ", \"hops\":[");
+      else
+         string_concat(str, len, &off, ", \"h\":[");
       for (j=0; j<hopc; j++) {
          if (j > 0) string_concat(str, len, &off, ",");
          string_concat(str, len, &off, "%s", hops[j]);

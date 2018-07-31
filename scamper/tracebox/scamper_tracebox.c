@@ -698,7 +698,7 @@ static void compute_differences(const scamper_tracebox_t *tracebox,
    return;
 }
 
-static void parse_meta(scamper_tracebox_t *tracebox, scamper_tracebox_pkt_t *pkt, 
+static int parse_meta(scamper_tracebox_t *tracebox, scamper_tracebox_pkt_t *pkt, 
                        uint8_t v, uint8_t proto, uint8_t iphlen) {
    /* populate option fields */
    if (v == 6) {
@@ -715,7 +715,6 @@ static void parse_meta(scamper_tracebox_t *tracebox, scamper_tracebox_pkt_t *pkt
       tracebox->ect          = (ip_hdr.ip_tos & 0x02) >> 1;
       tracebox->ce           =  ip_hdr.ip_tos & 0x01;
       tracebox->dscp         = (ip_hdr.ip_tos & 0xfc) >> 2;
-      
    }
 
    if (proto == IPPROTO_TCP) {
@@ -725,42 +724,43 @@ static void parse_meta(scamper_tracebox_t *tracebox, scamper_tracebox_pkt_t *pkt
       tracebox->flags        = tcp_hdr.th_flags;
       tracebox->ece          = (tcp_hdr.th_flags & 0x80) >> 7;  
 
-      typedef struct {
+      typedef struct __attribute__((packed)) {
         uint8_t kind;
         uint8_t size;
       } tcp_option_t;
       uint8_t* opt = ( pkt->data + iphlen + sizeof(struct tcphdr));
-      uint8_t subtype;
-      while( *opt != 0 ) {
+      uint8_t subtype, opt_bytes = 0, opt_len = (tcp_hdr.doff - 5) * 4;
+
+      while( *opt != 0 && opt_bytes < opt_len) {
          
          tcp_option_t _opt = *(tcp_option_t*)opt;
          switch (_opt.kind) {
             case 1: // NOP 
-               ++opt;  // NOP is one byte;
+               ++opt;
                break;
             case 2: // MSS 2
                tracebox->mss = ntohs(*(uint16_t*)(opt + 2));
-               opt += (_opt.size <= 0) ? 1 :  _opt.size;
+               opt += _opt.size;
                break;
             case 3: // wscale 1
                tracebox->wscale = *(uint8_t*)(opt + 2);
-               opt += (_opt.size <= 0) ? 1 :  _opt.size;
+               opt += _opt.size;
                break;
             case 4: // sack permitted
                tracebox->sackp = 1;
-               opt += (_opt.size <= 0) ? 1 :  _opt.size;
+               opt += _opt.size;
                break;
             case 5: // sack 8
                tracebox->sack = 1;
                tracebox->sack_sle     = ntohl(*(uint32_t*)(opt + 2));
                tracebox->sack_sre     = ntohl(*(uint32_t*)(opt + 6));
-               opt += (_opt.size <= 0) ? 1 :  _opt.size;
+               opt += _opt.size;
                break;
             case 8: // timestamp 10
                tracebox->ts           = 1;
                tracebox->tsval        = ntohl(*(uint32_t*)(opt + 2));
                tracebox->tsecr        = ntohl(*(uint32_t*)(opt + 6));
-               opt += (_opt.size <= 0) ? 1 :  _opt.size;
+               opt += _opt.size;
                break;
             case 30: // mptcp
                subtype = (*(uint8_t*)(opt + 2) >> 4);
@@ -773,15 +773,22 @@ static void parse_meta(scamper_tracebox_t *tracebox, scamper_tracebox_pkt_t *pkt
                   tracebox->rec_token = ntohl(*(uint32_t*)(opt + 2));
                   tracebox->send_rnum = ntohl(*(uint32_t*)(opt + 6));
                }
-               opt += (_opt.size <= 0) ? 1 :  _opt.size;
+               opt += _opt.size;
                break;
             default:
-               opt += (_opt.size == 0) ? 1 :  _opt.size;
+               opt += _opt.size;
                break;
+         }
+         if (_opt.kind == 1) {
+            opt_bytes++;
+         } else {
+            if (_opt.size == 0) return -1;
+            opt_bytes += _opt.size;
          }
       }
    }
 
+   return 0;
 }
 
 int scamper_tracebox_pkts2hops(scamper_tracebox_t *tracebox, uint8_t parse_header) {

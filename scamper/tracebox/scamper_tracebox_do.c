@@ -842,7 +842,10 @@ static scamper_probe_t build_probe(scamper_task_t *task, scamper_probe_t probe,
     probe.pr_tcp_sport  = tracebox->sport;
     probe.pr_tcp_dport  = tracebox->dport;
     probe.pr_tcp_flags |= tracebox->flags;
-    probe.pr_tcp_seq    = tracebox->seq;
+    if (tracebox->seq)
+      probe.pr_tcp_seq  = tracebox->seq;
+    else
+      random_u32(&probe.pr_tcp_seq);
     probe.pr_tcp_win    = TRACEBOX_DEFAULT_TCPWIN;	
    
     if (tracebox->mss)
@@ -1020,7 +1023,6 @@ static int tracebox_app_default(scamper_tracebox_t *tracebox,
 
    /* random seq number common to all probe */
    if (!tracebox->udp) {
-      random_u32(&tracebox->seq);
       tracebox->flags |= TH_SYN;
    }
 

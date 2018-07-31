@@ -60,10 +60,11 @@ static char * scamper_tracebox_icmp2text(const scamper_tracebox_t *tracebox, con
    string_concat(buf, bufsize, soff, " %s", c);
 }
 
-static void scamper_file_text_tracebox_write_fields(const scamper_tracebox_t *tracebox, 
-                                                   scamper_tracebox_hop_field_t **fields, 
-                                                   uint8_t field_count, char* prefix, 
-                                                   char *buf, size_t bufsize, size_t *soff) {
+static void scamper_file_text_tracebox_write_fields(
+                  const scamper_tracebox_t *tracebox, 
+                  scamper_tracebox_hop_field_t **fields, 
+                  uint8_t field_count, char* prefix, 
+                  char *buf, size_t bufsize, size_t *soff) {
    scamper_tracebox_hop_field_t *field;
    int i, j;
    uint8_t len;
