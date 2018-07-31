@@ -257,14 +257,14 @@ static int scamper_file_text_tracebox_write_statefull(
             if (loop == 2) {
                if (ttl == srv_ttl) {
                   string_concat(buf, bufsize, soff, 
-                     " There is no statefull middlebox between you and the destination.\n"); 
+                     " There is no stateful middlebox between you and the destination.\n"); 
                   return 0;
                } 
 
             } else if (loop == 4) {
                if (ttl == srv_ttl) {
                   string_concat(buf, bufsize, soff, 
-                     " There is a statefull middlebox between you and the destination.\n");
+                     " There is a stateful middlebox between you and the destination.\n");
                   return 0;
                }
             } 

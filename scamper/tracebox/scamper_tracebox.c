@@ -1011,7 +1011,7 @@ uint8_t **parse_packet(const uint8_t network, const uint8_t transport,
       /* Parse last transport bytes */
       case SCAMPER_TRACEBOX_ANSWER_FULL:
          if (transport == IPPROTO_TCP) {
-            for(i=8; i<12; i++) ppkt[0][i-8] = pkt[transoff];
+            for(i=8; i<12; i++) ppkt[0][i-8] = pkt[transoff+i];
             ppkt[1][0] = (pkt[transoff+12] & 0xf0) >> 4; 
             ppkt[2][0] = pkt[transoff+12] & 0x0f;        
             ppkt[3][0] = pkt[transoff+13];
