@@ -776,7 +776,7 @@ static void parse_meta(scamper_tracebox_t *tracebox, scamper_tracebox_pkt_t *pkt
                opt += _opt.size;
                break;
             default:
-               opt += (_opt.size <= 0) ? 1 :  _opt.size;
+               opt += (_opt.size == 0) ? 1 :  _opt.size;
                break;
          }
       }
